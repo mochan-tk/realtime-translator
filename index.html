@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:," />
+<title>リアルタイム翻訳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f2ec; --bg2:#ece9e0; --surface:#ffffff; --surface2:#faf9f6;
+    --ink:#1a1e1c; --ink2:#4b5550; --ink3:#8a938e;
+    --line:#ddd8cc; --line2:#c9c3b4;
+    --teal:#0d6e63; --teal-ink:#ffffff; --teal-soft:#e0efec;
+    --red:#d92d20; --red-soft:#fdecea;
+    --amber:#9a6700; --amber-soft:#fdf3d7;
+    --green:#12805c;
+    --shadow:0 1px 2px rgba(26,30,28,.06),0 8px 24px rgba(26,30,28,.06);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1311; --bg2:#131816; --surface:#1a201d; --surface2:#202724;
+      --ink:#eef2f0; --ink2:#b9c4bf; --ink3:#7d8a84;
+      --line:#2c3531; --line2:#3a4540;
+      --teal:#2fbfae; --teal-ink:#06231f; --teal-soft:#17332e;
+      --red:#ff6b5e; --red-soft:#3a1f1d;
+      --amber:#e8b84b; --amber-soft:#332a14;
+      --green:#3ecf9a;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Noto Sans JP","Noto Sans SC",system-ui,-apple-system,"Hiragino Sans",sans-serif;
+    line-height:1.55;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:14px 14px 40px}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+  /* status strip */
+  .strip{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;
+    padding:6px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ink3);flex:none}
+  .dot.on{background:var(--red);animation:pulse 1.1s infinite}
+  .dot.ready{background:var(--green)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .pill.warn{border-color:var(--amber);background:var(--amber-soft);color:var(--amber)}
+  .strip .sp{flex:1}
+  .pill button{all:unset;cursor:pointer;font:inherit;color:var(--teal);text-decoration:underline;text-underline-offset:2px}
+
+  /* language bar */
+  .langbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+  .langrow{display:grid;grid-template-columns:1fr 44px 1fr;gap:10px;align-items:end}
+  .fld label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--ink2);margin-bottom:5px}
+  select{
+    width:100%;appearance:none;-webkit-appearance:none;
+    font:inherit;font-size:16px;font-weight:700;color:var(--ink);
+    background:var(--surface2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center;
+    border:1px solid var(--line2);border-radius:10px;padding:11px 34px 11px 12px;min-height:48px;
+  }
+  select:focus-visible,button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+  .swap{
+    width:44px;height:48px;border-radius:10px;border:1px solid var(--line2);background:var(--teal-soft);
+    color:var(--teal);font-size:19px;cursor:pointer;display:grid;place-items:center;
+  }
+  .swap:active{transform:scale(.94)}
+  .presets{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .chip{
+    font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--surface2);color:var(--ink2);
+    padding:7px 12px;border-radius:999px;min-height:36px;
+  }
+  .chip.active{background:var(--teal);border-color:var(--teal);color:var(--teal-ink)}
+  .presets .hint{font-size:12px;color:var(--ink3);align-self:center;margin-left:2px}
+
+  /* live stage */
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  @media (max-width:720px){.stage{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;min-height:172px;display:flex;flex-direction:column}
+  .panel.target{border-top:4px solid var(--teal)}
+  .panel.source{border-top:4px solid var(--line2)}
+  .panel h2{margin:0 0 4px;font-size:12px;letter-spacing:.08em;color:var(--ink2);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .panel h2 .tag{font-size:11px;font-weight:700;letter-spacing:0;padding:2px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--ink3)}
+  .panel h2 .tag.live{background:var(--amber-soft);color:var(--amber);border-color:transparent}
+  .live-text{font-size:clamp(19px,2.6vw,25px);font-weight:700;line-height:1.5;word-break:break-word;flex:1}
+  .live-text .interim{color:var(--ink3);font-weight:500}
+  .live-text .placeholder{color:var(--ink3);font-weight:500;font-size:17px}
+  .live-sub{margin-top:8px;font-size:12.5px;color:var(--ink3);min-height:18px}
+
+  /* control deck */
+  .deck{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+  .deck-top{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .micbtn{
+    width:76px;height:76px;border-radius:50%;border:none;cursor:pointer;flex:none;
+    background:var(--teal);color:var(--teal-ink);display:grid;place-items:center;
+    box-shadow:0 6px 18px rgba(13,110,99,.35);transition:transform .12s;
+  }
+  .micbtn svg{width:32px;height:32px}
+  .micbtn:active{transform:scale(.95)}
+  .micbtn.listening{background:var(--red);box-shadow:0 0 0 8px var(--red-soft),0 6px 18px rgba(217,45,32,.3);animation:breathe 1.6s infinite}
+  @keyframes breathe{0%,100%{box-shadow:0 0 0 5px var(--red-soft)}50%{box-shadow:0 0 0 13px var(--red-soft)}}
+  .micbtn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;animation:none}
+  .deck-mid{flex:1;min-width:200px}
+  .deck-mid .state{font-size:17px;font-weight:900}
+  .deck-mid .sub{font-size:13px;color:var(--ink2);margin-top:2px}
+  #wave{width:100%;height:38px;display:block;margin-top:8px}
+  .deck-btns{display:flex;flex-wrap:wrap;gap:8px}
+  .btn{
+    font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;min-height:42px;
+    border-radius:10px;padding:9px 14px;border:1px solid var(--line2);background:var(--surface2);color:var(--ink);
+  }
+  .btn.primary{background:var(--teal);border-color:var(--teal);color:var(--teal-ink)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .toggles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+  .toggle{display:flex;gap:10px;align-items:flex-start;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;text-align:left;font:inherit;width:100%}
+  .toggle .sw{width:42px;height:24px;border-radius:999px;background:var(--line2);flex:none;position:relative;margin-top:2px;transition:background .15s}
+  .toggle .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s}
+  .toggle[aria-pressed="true"] .sw{background:var(--teal)}
+  .toggle[aria-pressed="true"] .sw::after{left:21px}
+  .toggle b{display:block;font-size:14px}
+  .toggle span.d{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
+  .slider-row{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .slider-row label{font-size:13px;font-weight:700;white-space:nowrap}
+  .slider-row input[type=range]{flex:1;accent-color:var(--teal)}
+  .slider-row .val{font-size:12.5px;color:var(--ink2);min-width:38px;text-align:right}
+
+  .banner{display:none;margin-top:12px;border-radius:var(--radius);padding:13px 15px;font-size:14px;border:1px solid}
+  .banner.show{display:block}
+  .banner.err{background:var(--red-soft);border-color:var(--red);color:var(--ink)}
+  .banner.info{background:var(--amber-soft);border-color:var(--amber);color:var(--ink)}
+  .banner b{font-weight:900}
+  .banner ul{margin:6px 0 0;padding-left:18px}
+
+  /* diagnostics */
+  .diag{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px}
+  .diag-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .diag-head h2{margin:0;font-size:13px;letter-spacing:.05em;color:var(--ink2)}
+  .diag-head .sp{flex:1}
+  .diag-env{font-size:11px;color:var(--ink3);word-break:break-all;flex-basis:100%}
+  .diag-log{margin-top:8px;max-height:190px;overflow-y:auto;font-size:11.5px;line-height:1.65;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-word}
+  .diag-log .e{color:var(--red);font-weight:700}
+  .diag-log .ok{color:var(--green);font-weight:700}
+
+  /* manual */
+  .manual{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+  .manual h2{margin:0 0 8px;font-size:13px;letter-spacing:.05em;color:var(--ink2)}
+  .manual-row{display:flex;gap:8px;flex-wrap:wrap}
+  .manual textarea{
+    flex:1;min-width:220px;font:inherit;font-size:16px;color:var(--ink);
+    background:var(--surface2);border:1px solid var(--line2);border-radius:10px;padding:11px 12px;min-height:52px;resize:vertical;
+  }
+
+  /* history */
+  .hist-head{display:flex;align-items:baseline;gap:10px;margin:22px 2px 10px;flex-wrap:wrap}
+  .hist-head h2{margin:0;font-size:16px;font-weight:900}
+  .hist-head .count{font-size:12.5px;color:var(--ink3)}
+  .hist-head .sp{flex:1}
+  .hist-head button{all:unset;cursor:pointer;font-size:13px;font-weight:700;color:var(--teal);text-decoration:underline;text-underline-offset:3px}
+  .empty{border:1.5px dashed var(--line2);border-radius:var(--radius);padding:26px 18px;text-align:center;color:var(--ink2);font-size:14px;background:var(--surface2)}
+  .entry{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:10px}
+  .entry .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:11.5px;color:var(--ink3);margin-bottom:7px}
+  .entry .meta .dir{font-weight:700;color:var(--ink2);background:var(--surface2);border:1px solid var(--line);padding:2px 8px;border-radius:999px}
+  .entry .orig{font-size:15.5px;color:var(--ink2);line-height:1.5;word-break:break-word}
+  .entry .tran{font-size:19px;font-weight:700;line-height:1.5;margin-top:4px;word-break:break-word}
+  .entry .tran.pending{color:var(--ink3);font-weight:500;font-size:16px}
+  .entry .tran.failed{color:var(--red);font-weight:500;font-size:15px}
+  .entry .acts{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+  .mini{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid var(--line);background:var(--surface2);color:var(--ink2);border-radius:8px;padding:6px 11px;min-height:34px}
+  .mini:active{transform:scale(.96)}
+
+  .tips{margin-top:22px;font-size:13px;color:var(--ink2);background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .tips h2{margin:0 0 6px;font-size:13.5px;color:var(--ink)}
+  .tips ul{margin:0;padding-left:18px}
+  .tips li{margin:3px 0}
+  .toast{
+    position:fixed;left:50%;bottom:22px;transform:translate(-50%,80px);z-index:50;
+    background:var(--ink);color:var(--bg);font-size:14px;font-weight:700;
+    padding:11px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.3);
+    transition:transform .25s;max-width:92vw;text-align:center;pointer-events:none;
+  }
+  .toast.show{transform:translate(-50%,0)}
+  @media (prefers-reduced-motion: reduce){
+    .dot.on,.micbtn.listening{animation:none}
+    .toast{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="strip" role="status">
+    <span class="pill"><span class="dot" id="statusDot"></span><span id="statusText">待機中</span></span>
+    <span class="pill" id="srPill">音声認識：確認中…</span>
+    <span class="pill" id="ttsPill">読み上げ：確認中…</span>
+    <span class="sp"></span>
+    <span class="pill mono" id="latencyPill" title="直近の翻訳にかかった時間">翻訳 — ms</span>
+  </div>
+
+  <section class="langbar" aria-label="言語の選択">
+    <div class="langrow">
+      <div class="fld">
+        <label for="srcLang">話す言語（聞き取り）</label>
+        <select id="srcLang"></select>
+      </div>
+      <button class="swap" id="swapBtn" type="button" aria-label="言語を入れ替える" title="言語を入れ替える">⇄</button>
+      <div class="fld">
+        <label for="tgtLang">翻訳先（読み上げ）</label>
+        <select id="tgtLang"></select>
+      </div>
+    </div>
+    <div class="presets" id="presets">
+      <button class="chip" type="button" data-src="ja" data-tgt="zh-CN">日本語 → 中国語</button>
+      <button class="chip" type="button" data-src="zh-CN" data-tgt="ja">中国語 → 日本語</button>
+      <button class="chip" type="button" data-src="ja" data-tgt="en">日本語 → 英語</button>
+      <button class="chip" type="button" data-src="en" data-tgt="ja">英語 → 日本語</button>
+      <button class="chip" type="button" data-src="ja" data-tgt="ko">日本語 → 韓国語</button>
+      <span class="hint">深圳では「日→中」と双方向モードが便利です</span>
+    </div>
+  </section>
+
+  <div class="banner info" id="supportBanner" role="alert"></div>
+  <div class="banner err" id="errorBanner" role="alert"></div>
+
+  <section class="diag" aria-label="診断情報">
+    <div class="diag-head">
+      <h2>診断ログ（エラー切り分け用）</h2>
+      <span class="sp"></span>
+      <button class="mini" id="diagCopy" type="button">ログをコピー</button>
+      <button class="mini" id="diagClear" type="button">ログを消す</button>
+      <span class="diag-env mono" id="diagEnv"></span>
+    </div>
+    <div class="diag-log mono" id="diagLog" aria-live="polite"></div>
+  </section>
+
+  <section class="stage" aria-label="ライブ表示">
+    <div class="panel source">
+      <h2><span id="srcPanelTitle">原文</span><span class="tag" id="srcTag">待機</span></h2>
+      <div class="live-text" id="srcLive"><span class="placeholder">マイクボタンを押して話しかけてください。話している途中からここに文字が出ます。</span></div>
+      <div class="live-sub" id="srcSub"></div>
+    </div>
+    <div class="panel target">
+      <h2><span id="tgtPanelTitle">訳文</span><span class="tag" id="tgtTag">待機</span></h2>
+      <div class="live-text" id="tgtLive"><span class="placeholder">翻訳結果がここに出ます。確定した文は自動で読み上げます。</span></div>
+      <div class="live-sub" id="tgtSub"></div>
+    </div>
+  </section>
+
+  <section class="deck" aria-label="操作">
+    <div class="deck-top">
+      <button class="micbtn" id="micBtn" type="button" aria-label="録音を開始">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3" fill="currentColor"/><path d="M5 11.5a7 7 0 0 0 14 0M12 18.5V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="deck-mid">
+        <div class="state" id="deckState">タップして通訳スタート</div>
+        <div class="sub" id="deckSub">一文ごとに区切って話すと、翻訳と読み上げが速くなります。</div>
+        <canvas id="wave" width="600" height="76" aria-hidden="true"></canvas>
+      </div>
+      <div class="deck-btns">
+        <button class="btn" id="stopSpeakBtn" type="button">読み上げを止める</button>
+        <button class="btn" id="retestBtn" type="button">音声テスト</button>
+      </div>
+    </div>
+    <div class="toggles">
+      <button class="toggle" id="tglSpeak" type="button" aria-pressed="true">
+        <span class="sw" aria-hidden="true"></span>
+        <span><b>自動読み上げ</b><span class="d">翻訳が確定したらすぐ音声で出力します</span></span>
+      </button>
+      <button class="toggle" id="tglConvo" type="button" aria-pressed="false">
+        <span class="sw" aria-hidden="true"></span>
+        <span><b>双方向モード（会話）</b><span class="d">一文終わるごとに言語を自動で入れ替え、相手の返事も訳します</span></span>
+      </button>
+      <button class="toggle" id="tglPreview" type="button" aria-pressed="true">
+        <span class="sw" aria-hidden="true"></span>
+        <span><b>途中経過も翻訳</b><span class="d">話し終わる前に訳文プレビューを表示します（読み上げはしません）</span></span>
+      </button>
+      <div class="slider-row">
+        <label for="rate">読み上げ速度</label>
+        <input type="range" id="rate" min="0.7" max="1.5" step="0.1" value="1">
+        <span class="val mono" id="rateVal">1.0×</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="manual" aria-label="テキスト入力">
+    <h2>キーボード入力でも翻訳できます（マイクが使えないとき用）</h2>
+    <div class="manual-row">
+      <textarea id="manualText" rows="2" placeholder="ここに文を入力…（例：このホテルまでタクシーでいくらですか？）"></textarea>
+      <button class="btn primary" id="manualBtn" type="button">翻訳して読み上げる</button>
+    </div>
+  </section>
+
+  <div class="hist-head">
+    <h2>会話ログ</h2>
+    <span class="count" id="histCount">まだ何もありません</span>
+    <span class="sp"></span>
+    <button type="button" id="clearBtn">ログを消す</button>
+  </div>
+  <div id="histList">
+    <div class="empty" id="histEmpty">話した内容と翻訳が、ここに時系列で残ります。各文はボタンで再読み上げ・コピーができます。</div>
+  </div>
+
+  <div class="tips">
+    <h2>うまく使うコツ</h2>
+    <ul>
+      <li>短く区切って話すほど速く訳されます。長い一文は途中で区切ってください。</li>
+      <li>相手に聞かせるときは、スマホの音量を上げて画面を見せるのが確実です。訳文は大きな文字で出ます。</li>
+      <li>固有名詞や数字は聞き取りを間違えやすいので、言い換えるかキーボード入力で補ってください。</li>
+      <li>音声認識と翻訳はブラウザ経由で各サービスのエンジンを使います。通信が不安定な場所では確定まで少し待ってください。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- languages ---------- */
+  var LANGS = [
+    { code:"ja",    name:"日本語",        recog:"ja-JP", tts:"ja-JP", g:"ja" },
+    { code:"zh-CN", name:"中国語（簡体字）", recog:"zh-CN", tts:"zh-CN", g:"zh-CN" },
+    { code:"zh-TW", name:"中国語（繁体字）", recog:"zh-TW", tts:"zh-TW", g:"zh-TW" },
+    { code:"en",    name:"英語",          recog:"en-US", tts:"en-US", g:"en" },
+    { code:"ko",    name:"韓国語",        recog:"ko-KR", tts:"ko-KR", g:"ko" },
+    { code:"th",    name:"タイ語",        recog:"th-TH", tts:"th-TH", g:"th" },
+    { code:"vi",    name:"ベトナム語",    recog:"vi-VN", tts:"vi-VN", g:"vi" },
+    { code:"es",    name:"スペイン語",    recog:"es-ES", tts:"es-ES", g:"es" },
+    { code:"fr",    name:"フランス語",    recog:"fr-FR", tts:"fr-FR", g:"fr" },
+    { code:"de",    name:"ドイツ語",      recog:"de-DE", tts:"de-DE", g:"de" },
+    { code:"pt",    name:"ポルトガル語",  recog:"pt-BR", tts:"pt-BR", g:"pt" },
+    { code:"id",    name:"インドネシア語", recog:"id-ID", tts:"id-ID", g:"id" }
+  ];
+  function langByCode(c){ for (var i=0;i<LANGS.length;i++) if (LANGS[i].code===c) return LANGS[i]; return LANGS[0]; }
+
+  /* ---------- elements ---------- */
+  function $(id){ return document.getElementById(id); }
+  var srcSel=$("srcLang"), tgtSel=$("tgtLang"), swapBtn=$("swapBtn");
+  var micBtn=$("micBtn"), deckState=$("deckState"), deckSub=$("deckSub");
+  var statusDot=$("statusDot"), statusText=$("statusText");
+  var srcLive=$("srcLive"), tgtLive=$("tgtLive"), srcSub=$("srcSub"), tgtSub=$("tgtSub");
+  var srcTag=$("srcTag"), tgtTag=$("tgtTag");
+  var srcPanelTitle=$("srcPanelTitle"), tgtPanelTitle=$("tgtPanelTitle");
+  var histList=$("histList"), histCount=$("histCount");
+  var toastEl=$("toast"), wave=$("wave");
+
+  LANGS.forEach(function(l){
+    var o1=document.createElement("option"); o1.value=l.code; o1.textContent=l.name; srcSel.appendChild(o1);
+    var o2=document.createElement("option"); o2.value=l.code; o2.textContent=l.name; tgtSel.appendChild(o2);
+  });
+  srcSel.value="ja"; tgtSel.value="zh-CN";
+
+  /* ---------- state ---------- */
+  var autoSpeak=true, convoMode=false, previewOn=true;
+  var listening=false, shouldListen=false, recog=null;
+  var finalSoFar="", interimNow="", entrySeq=0, spokenCount=0;
+  var previewTimer=null, lastPreviewText="", translatingPreview=false;
+  var audioCtx=null, analyser=null, mediaStream=null, waveRAF=null, waveLevel=0;
+  var restartTimer=null;
+  var recogStarted=false, startWatchdog=null, endWithoutStart=0, netErrStreak=0, noSpeechCount=0, lastErrorCode="", resultLogged=false, restartCount=0;
+
+  function toast(msg){
+    toastEl.textContent=msg; toastEl.classList.add("show");
+    clearTimeout(toast._t); toast._t=setTimeout(function(){ toastEl.classList.remove("show"); },2600);
+  }
+  function showError(html){
+    var b=$("errorBanner"); if(!html){ b.className="banner err"; b.innerHTML=""; return; }
+    b.innerHTML=html; b.className="banner err show";
+  }
+  function esc(s){ var d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+
+  /* ---------- diagnostics ---------- */
+  var diagLogEl=$("diagLog");
+  var inIframe=(function(){ try{ return window.self!==window.top; }catch(e){ return true; } })();
+  var secureCtx=("isSecureContext" in window)? !!window.isSecureContext : (location.protocol==="https:");
+  function errMsg(e){ if(!e) return "不明なエラー"; return (e.name?e.name+" ":"")+(e.message||String(e)); }
+  function diagStamp(){ var d=new Date(); function p(x){ return String(x).padStart(2,"0"); } return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()); }
+  function logDiag(kind, msg){
+    if(!diagLogEl) return;
+    var line=document.createElement("div");
+    if(kind) line.className=kind;
+    line.textContent=diagStamp()+" "+msg;
+    diagLogEl.appendChild(line);
+    while(diagLogEl.children.length>80) diagLogEl.removeChild(diagLogEl.firstChild);
+    diagLogEl.scrollTop=diagLogEl.scrollHeight;
+  }
+  $("diagEnv").textContent="埋め込み表示: "+(inIframe?"はい":"いいえ")+" / 安全な接続(HTTPS等): "+(secureCtx?"はい":"いいえ")+" / UA: "+navigator.userAgent;
+  $("diagClear").addEventListener("click", function(){ diagLogEl.innerHTML=""; logDiag("", "ログを消去しました"); });
+  $("diagCopy").addEventListener("click", function(){ copyText(diagLogEl.textContent||""); });
+
+  /* ---------- capability check ---------- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var srCtorName = window.SpeechRecognition ? "SpeechRecognition" : (window.webkitSpeechRecognition ? "webkitSpeechRecognition" : "なし");
+  var hasTTS = ("speechSynthesis" in window);
+  $("srPill").textContent = SR ? "音声認識：APIあり（起動は未検証）" : "音声認識：APIなし（非対応）";
+  $("ttsPill").textContent = hasTTS ? "読み上げ：利用可" : "読み上げ：このブラウザ非対応";
+  logDiag("", "環境チェック: 音声認識コンストラクタ="+srCtorName+" / 読み上げAPI="+(hasTTS?"あり":"なし")+" / getUserMedia="+((navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)?"あり":"なし")+" / 埋め込み表示="+(inIframe?"はい":"いいえ")+" / 安全な接続="+(secureCtx?"はい":"いいえ"));
+  if (SR){
+    logDiag("", "現時点では「APIが存在する」ことだけ確認済みです。実際に起動できるかは、マイクボタンを押して開始イベント（onstart）が来て初めて確定します。");
+  } else {
+    logDiag("e", "音声認識APIが見つかりません（SpeechRecognition / webkitSpeechRecognition ともに未定義）。ブラウザ自体が未対応か、埋め込み表示で無効化されています。");
+  }
+  if (navigator.permissions && navigator.permissions.query){
+    navigator.permissions.query({name:"microphone"}).then(function(st){
+      logDiag("", "マイク権限の状態（permissions）: "+st.state+"（granted=許可 / denied=拒否 / prompt=未決定）");
+    }).catch(function(e){ logDiag("", "マイク権限の状態は取得できませんでした: "+errMsg(e)); });
+  } else {
+    logDiag("", "マイク権限の状態は取得できません（Permissions API非対応）");
+  }
+  if (!SR){
+    var sb=$("supportBanner");
+    sb.className="banner info show";
+    sb.innerHTML="<b>この画面ではマイク音声認識が使えません（音声認識API自体が見つかりません）。</b><ul><li>検出結果： 音声認識コンストラクタ＝なし / 埋め込み表示＝"+(inIframe?"はい":"いいえ")+" / 安全な接続＝"+(secureCtx?"はい":"いいえ")+"</li><li>アプリ内表示（埋め込み）では、ブラウザ本体が対応していてもAPIが無効化されることがあります。Chrome／Safariでこのページを直接開くと結果が変わるか比べてください。</li><li>下の「キーボード入力」から翻訳＋読み上げは使えます。</li></ul>";
+    micBtn.disabled=true;
+    deckState.textContent="キーボード入力モード";
+    deckSub.textContent="マイクは使えませんが、入力した文の翻訳と読み上げは動作します。";
+    statusText.textContent="入力モード";
+  } else {
+    statusDot.className="dot ready"; statusText.textContent="準備OK";
+  }
+  if (hasTTS && speechSynthesis.getVoices) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged=function(){ speechSynthesis.getVoices(); }; }
+
+  /* ---------- translation ---------- */
+  function fetchWithTimeout(url, ms){
+    var ctrl=("AbortController" in window)? new AbortController():null;
+    var t=setTimeout(function(){ if(ctrl) ctrl.abort(); }, ms||9000);
+    return fetch(url, ctrl?{signal:ctrl.signal}:{}).then(function(r){ clearTimeout(t); return r; }, function(e){ clearTimeout(t); throw e; });
+  }
+  function translateGoogle(text, sl, tl){
+    var url="https://translate.googleapis.com/translate_a/single?client=gtx&sl="+encodeURIComponent(sl)+"&tl="+encodeURIComponent(tl)+"&dt=t&q="+encodeURIComponent(text);
+    return fetchWithTimeout(url).then(function(r){
+      if(!r.ok) throw new Error("http "+r.status);
+      return r.json();
+    }).then(function(data){
+      if(!data || !data[0]) throw new Error("empty");
+      var out=""; data[0].forEach(function(seg){ if(seg && seg[0]) out+=seg[0]; });
+      out=out.trim(); if(!out) throw new Error("empty");
+      return out;
+    });
+  }
+  function translateMyMemory(text, sl, tl){
+    var pair=sl+"|"+tl;
+    var url="https://api.mymemory.translated.net/get?q="+encodeURIComponent(text)+"&langpair="+encodeURIComponent(pair);
+    return fetchWithTimeout(url).then(function(r){
+      if(!r.ok) throw new Error("http "+r.status);
+      return r.json();
+    }).then(function(data){
+      var out=data && data.responseData && data.responseData.translatedText;
+      if(!out || /MYMEMORY WARNING|NO QUERY|INVALID/i.test(out)) throw new Error("mm empty");
+      return out.trim();
+    });
+  }
+  function translateText(text, srcCode, tgtCode){
+    var s=langByCode(srcCode), t=langByCode(tgtCode);
+    if (srcCode===tgtCode) return Promise.resolve(text);
+    var t0=performance.now();
+    var gErr=null;
+    return translateGoogle(text, s.g, t.g)
+      .catch(function(e){
+        gErr=e;
+        logDiag("e", "翻訳API失敗（Google translate_a）: "+errMsg(e)+" — 代替APIで再試行します");
+        return translateMyMemory(text, s.g, t.g);
+      })
+      .then(function(out){
+        var ms=Math.round(performance.now()-t0);
+        $("latencyPill").textContent="翻訳 "+ms+" ms";
+        return out;
+      }, function(e){
+        var detail="Google: "+errMsg(gErr)+" / MyMemory: "+errMsg(e);
+        logDiag("e", "翻訳APIが両方失敗しました: "+detail);
+        throw new Error(detail);
+      });
+  }
+
+  /* ---------- TTS ---------- */
+  function pickVoice(langCode){
+    if(!hasTTS) return null;
+    var want=langByCode(langCode).tts.toLowerCase();
+    var voices=speechSynthesis.getVoices()||[];
+    var i,v;
+    for(i=0;i<voices.length;i++){ v=voices[i]; if(v.lang && v.lang.toLowerCase()===want) return v; }
+    for(i=0;i<voices.length;i++){ v=voices[i]; if(v.lang && v.lang.toLowerCase().indexOf(want.split("-")[0])===0) return v; }
+    return null;
+  }
+  function speak(text, langCode){
+    if(!hasTTS || !text) return;
+    try{
+      speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance(text);
+      u.lang=langByCode(langCode).tts;
+      var v=pickVoice(langCode); if(v) u.voice=v;
+      u.rate=parseFloat($("rate").value)||1;
+      u.pitch=1;
+      u.onerror=function(ev){ logDiag("e", "読み上げエラー（utterance.onerror）: "+((ev&&ev.error)||"unknown")); };
+      speechSynthesis.speak(u);
+    }catch(e){ logDiag("e", "読み上げの呼び出しで例外: "+errMsg(e)); }
+  }
+  function stopSpeak(){ if(hasTTS){ try{ speechSynthesis.cancel(); }catch(e){} } }
+  $("stopSpeakBtn").addEventListener("click", function(){ stopSpeak(); toast("読み上げを止めました"); });
+  $("retestBtn").addEventListener("click", function(){
+    var t=langByCode(tgtSel.value);
+    var samples={ "ja":"テストです。翻訳音声が聞こえますか？", "zh-CN":"你好，这是语音测试。", "zh-TW":"你好，這是語音測試。", "en":"Hello, this is a voice test.", "ko":"안녕하세요, 음성 테스트입니다." };
+    speak(samples[tgtSel.value]||"Hello, this is a voice test.", tgtSel.value);
+    toast(t.name+" でテスト音声を再生します");
+  });
+  $("rate").addEventListener("input", function(){ $("rateVal").textContent=(parseFloat(this.value)).toFixed(1)+"×"; });
+
+  /* ---------- language UI ---------- */
+  function refreshLangUI(){
+    var s=langByCode(srcSel.value), t=langByCode(tgtSel.value);
+    srcPanelTitle.textContent="原文 ・ "+s.name;
+    tgtPanelTitle.textContent="訳文 ・ "+t.name;
+    var chips=document.querySelectorAll("#presets .chip");
+    chips.forEach(function(c){
+      c.classList.toggle("active", c.getAttribute("data-src")===srcSel.value && c.getAttribute("data-tgt")===tgtSel.value);
+    });
+    if (recog && listening){ restartRecognitionSoon(); }
+  }
+  function swapLangs(){
+    var a=srcSel.value; srcSel.value=tgtSel.value; tgtSel.value=a;
+    refreshLangUI();
+    srcLive.innerHTML='<span class="placeholder">'+esc(langByCode(srcSel.value).name)+'で話してください。</span>';
+    tgtLive.innerHTML='<span class="placeholder">'+esc(langByCode(tgtSel.value).name)+'に翻訳します。</span>';
+    srcTag.textContent="待機"; tgtTag.textContent="待機"; srcTag.className="tag"; tgtTag.className="tag";
+    finalSoFar=""; interimNow=""; lastPreviewText="";
+  }
+  swapBtn.addEventListener("click", swapLangs);
+  srcSel.addEventListener("change", refreshLangUI);
+  tgtSel.addEventListener("change", refreshLangUI);
+  document.querySelectorAll("#presets .chip").forEach(function(c){
+    c.addEventListener("click", function(){
+      srcSel.value=c.getAttribute("data-src"); tgtSel.value=c.getAttribute("data-tgt");
+      refreshLangUI(); toast(langByCode(srcSel.value).name+" → "+langByCode(tgtSel.value).name+" に設定しました");
+    });
+  });
+
+  /* ---------- toggles ---------- */
+  function bindToggle(id, initial, fn){
+    var el=$(id);
+    el.addEventListener("click", function(){
+      var on=el.getAttribute("aria-pressed")!=="true";
+      el.setAttribute("aria-pressed", on?"true":"false"); fn(on);
+    });
+    el.setAttribute("aria-pressed", initial?"true":"false");
+  }
+  bindToggle("tglSpeak", true, function(on){ autoSpeak=on; if(!on) stopSpeak(); });
+  bindToggle("tglConvo", false, function(on){ convoMode=on; toast(on?"双方向モード ON：一文ごとに言語が入れ替わります":"双方向モード OFF"); });
+  bindToggle("tglPreview", true, function(on){ previewOn=on; if(!on){ clearTimeout(previewTimer); tgtTag.textContent="待機"; tgtTag.className="tag"; } });
+
+  /* ---------- live panels ---------- */
+  function renderSource(){
+    if(!finalSoFar && !interimNow){
+      srcLive.innerHTML='<span class="placeholder">聞き取り中…話し始めてください。</span>';
+    } else {
+      srcLive.innerHTML=esc(finalSoFar)+(finalSoFar&&interimNow?" ":"")+'<span class="interim">'+esc(interimNow)+"</span>";
+    }
+    srcLive.scrollTop=srcLive.scrollHeight;
+  }
+  function setTargetPreview(text){
+    tgtLive.textContent=text;
+    tgtTag.textContent="プレビュー"; tgtTag.className="tag live";
+  }
+  function setTargetFinal(text){
+    tgtLive.textContent=text;
+    tgtTag.textContent="確定"; tgtTag.className="tag";
+  }
+  function schedulePreview(){
+    if(!previewOn) return;
+    var text=(finalSoFar+" "+interimNow).trim();
+    if(text.length<2 || text===lastPreviewText) return;
+    clearTimeout(previewTimer);
+    previewTimer=setTimeout(function(){
+      if(translatingPreview) return;
+      translatingPreview=true; lastPreviewText=text;
+      var sc=srcSel.value, tc=tgtSel.value;
+      translateText(text, sc, tc).then(function(out){
+        if(srcSel.value===sc && tgtSel.value===tc && listening) setTargetPreview(out);
+      }).catch(function(){ /* preview failure is silent */ })
+      .then(function(){ translatingPreview=false; });
+    }, 650);
+  }
+
+  /* ---------- history ---------- */
+  function addHistory(origText, srcCode, tgtCode){
+    entrySeq++;
+    var empty=$("histEmpty"); if(empty) empty.remove();
+    var entry=document.createElement("div"); entry.className="entry";
+    var now=new Date();
+    var hh=String(now.getHours()).padStart(2,"0"), mm=String(now.getMinutes()).padStart(2,"0"), ss=String(now.getSeconds()).padStart(2,"0");
+    entry.innerHTML=
+      '<div class="meta"><span class="dir">'+esc(langByCode(srcCode).name)+" → "+esc(langByCode(tgtCode).name)+'</span><span class="mono">'+hh+":"+mm+":"+ss+'</span><span class="lat"></span></div>'+
+      '<div class="orig">'+esc(origText)+'</div>'+
+      '<div class="tran pending">翻訳中…</div>'+
+      '<div class="acts"><button class="mini replay" type="button">🔊 もう一度聞く</button><button class="mini copyt" type="button">訳文をコピー</button><button class="mini copyo" type="button">原文をコピー</button></div>';
+    histList.insertBefore(entry, histList.firstChild);
+    histCount.textContent=entrySeq+" 文";
+    var tranEl=entry.querySelector(".tran");
+    var data={ orig:origText, tran:"", tgt:tgtCode };
+    entry.querySelector(".replay").addEventListener("click", function(){ if(data.tran) speak(data.tran, data.tgt); else toast("まだ翻訳が終わっていません"); });
+    entry.querySelector(".copyt").addEventListener("click", function(){ copyText(data.tran||""); });
+    entry.querySelector(".copyo").addEventListener("click", function(){ copyText(data.orig); });
+    var t0=performance.now();
+    translateText(origText, srcCode, tgtCode).then(function(out){
+      data.tran=out;
+      tranEl.textContent=out; tranEl.className="tran";
+      entry.querySelector(".lat").textContent=Math.round(performance.now()-t0)+" ms";
+      setTargetFinal(out);
+      tgtSub.textContent=langByCode(tgtCode).name+" ・ 読み上げ"+(autoSpeak?"します":"はOFFです");
+      if(autoSpeak) speak(out, tgtCode);
+      spokenCount++;
+      if(convoMode && listening){
+        setTimeout(function(){ if(listening){ swapLangs(); toast("相手の番です："+langByCode(srcSel.value).name+" → "+langByCode(tgtSel.value).name); } }, 900);
+      }
+    }).catch(function(err){
+      tranEl.textContent="翻訳に失敗しました（詳細: "+(err&&err.message?err.message:"不明")+"）。通信を確認してもう一度お試しください。";
+      tranEl.className="tran failed";
+      tgtLive.innerHTML='<span class="placeholder">翻訳に失敗しました。もう一度話すか、キーボード入力をお試しください。失敗の詳細は会話ログと診断ログに出ています。</span>';
+    });
+    return entry;
+  }
+  function copyText(t){
+    if(!t){ toast("コピーするテキストがありません"); return; }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){ toast("コピーしました"); }, function(){ toast("コピーできませんでした"); });
+    } else { toast("このブラウザではコピーできません"); }
+  }
+  $("clearBtn").addEventListener("click", function(){
+    histList.innerHTML='<div class="empty" id="histEmpty">話した内容と翻訳が、ここに時系列で残ります。各文はボタンで再読み上げ・コピーができます。</div>';
+    entrySeq=0; histCount.textContent="まだ何もありません"; toast("ログを消しました");
+  });
+
+  /* ---------- manual input ---------- */
+  $("manualBtn").addEventListener("click", function(){
+    var text=$("manualText").value.trim();
+    if(!text){ toast("文を入力してください"); return; }
+    srcLive.textContent=text; finalSoFar=text; interimNow="";
+    addHistory(text, srcSel.value, tgtSel.value);
+  });
+  $("manualText").addEventListener("keydown", function(e){
+    if((e.metaKey||e.ctrlKey) && e.key==="Enter"){ $("manualBtn").click(); }
+  });
+
+  /* ---------- waveform ---------- */
+  var wctx=wave.getContext("2d");
+  function drawWave(){
+    var W=wave.width, H=wave.height;
+    wctx.clearRect(0,0,W,H);
+    var bars=42, bw=W/bars;
+    var dark=window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    wctx.fillStyle = listening ? (dark?"#2fbfae":"#0d6e63") : (dark?"#3a4540":"#c9c3b4");
+    var data=null;
+    if(analyser){ data=new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(data); }
+    for(var i=0;i<bars;i++){
+      var v;
+      if(data){ v=data[Math.floor(i/bars*data.length*0.7)]/255; }
+      else if(listening){ v=0.25+0.22*Math.abs(Math.sin(Date.now()/240+i*0.7)); }
+      else { v=0.08; }
+      var h=Math.max(3, v*(H-8));
+      var x=i*bw+bw*0.22, w=Math.max(2,bw*0.56);
+      wctx.beginPath();
+      if(wctx.roundRect) wctx.roundRect(x,(H-h)/2,w,h,3); else wctx.rect(x,(H-h)/2,w,h);
+      wctx.fill();
+    }
+    if(listening || analyser) waveRAF=requestAnimationFrame(drawWave);
+  }
+  function startWaveStream(){
+    drawWave();
+    if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+      navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+        logDiag("ok", "マイク入力を取得しました（波形表示用 getUserMedia 成功）");
+        mediaStream=stream;
+        try{
+          audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+          var srcNode=audioCtx.createMediaStreamSource(stream);
+          analyser=audioCtx.createAnalyser(); analyser.fftSize=128;
+          srcNode.connect(analyser);
+        }catch(e){ analyser=null; logDiag("e", "波形表示用の音声解析で例外: "+errMsg(e)); }
+      }).catch(function(e){ logDiag("e", "getUserMedia 失敗（波形表示用）: "+errMsg(e)+" — マイク許可がないと波形は出ません。音声認識自体の可否は診断ログの onstart / onerror で判断してください。"); });
+    }
+  }
+  function stopWaveStream(){
+    if(waveRAF) cancelAnimationFrame(waveRAF);
+    if(mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream=null; }
+    analyser=null; drawWave();
+  }
+
+  /* ---------- speech recognition ---------- */
+  function createRecognition(){
+    if(!SR) return null;
+    var r=new SR();
+    r.continuous=true; r.interimResults=true; r.maxAlternatives=1;
+    r.lang=langByCode(srcSel.value).recog;
+    r.onstart=function(){
+      recogStarted=true; endWithoutStart=0; noSpeechCount=0; netErrStreak=0;
+      clearTimeout(startWatchdog);
+      $("srPill").textContent="音声認識：起動確認済み";
+      $("srPill").className="pill";
+      logDiag("ok", "認識開始（onstart） lang="+r.lang+" — エンジンが実際に起動しました");
+    };
+    r.onaudiostart=function(){ logDiag("", "マイク音声の取り込み開始（onaudiostart）"); };
+    r.onspeechstart=function(){ logDiag("", "発話を検出（onspeechstart）"); };
+    r.onresult=function(ev){
+      if(!resultLogged){ resultLogged=true; logDiag("ok", "認識結果を受信（onresult） — エンジンから応答が返りました"); }
+      var newFinal="", interim="";
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        var res=ev.results[i];
+        if(res.isFinal) newFinal+=res[0].transcript;
+        else interim+=res[0].transcript;
+      }
+      interimNow=interim;
+      if(newFinal.trim()){
+        var sentence=newFinal.trim();
+        finalSoFar=""; interimNow="";
+        srcLive.textContent=sentence;
+        srcTag.textContent="確定"; srcTag.className="tag";
+        srcSub.textContent="翻訳しています…";
+        addHistory(sentence, srcSel.value, tgtSel.value);
+        srcSub.textContent="";
+      } else {
+        srcTag.textContent="聞き取り中"; srcTag.className="tag live";
+        renderSource(); schedulePreview();
+      }
+    };
+    r.onerror=function(ev){
+      var code=(ev&&ev.error)||"unknown";
+      lastErrorCode=code;
+      clearTimeout(startWatchdog);
+      logDiag("e", "音声認識エラー（onerror） code="+code+((ev&&ev.message)?(" / "+ev.message):""));
+      $("srPill").textContent="音声認識：エラー（"+code+"）";
+      $("srPill").className="pill warn";
+      if(code==="no-speech"){
+        noSpeechCount++;
+        srcSub.textContent="音声が検出されませんでした（code=no-speech、"+noSpeechCount+"回目）。マイクに近づいて話してください。認識は継続しています。";
+        return;
+      }
+      if(code==="aborted"){
+        srcSub.textContent="認識が中断されました（code=aborted）。";
+        return;
+      }
+      var info={
+        "not-allowed":"マイクの使用が許可されませんでした。ブラウザのアドレスバー付近にあるマイク／権限アイコンから「許可」に変えてください。埋め込み表示では許可ダイアログ自体が出ないことがあります。",
+        "service-not-allowed":"音声認識サービスがこの表示環境で許可されていません。アプリ内表示・埋め込み表示では、対応ブラウザでもこのコードで始まらないことがあります。ページをブラウザで直接開いた場合と比べると切り分けできます。",
+        "audio-capture":"マイクが見つからないか、他のアプリが使用中です。マイクの接続を確認してください。",
+        "network":"音声認識サーバーへの通信に失敗しました。ネットワーク接続を確認してください。",
+        "language-not-supported":"選択中の言語は、この環境の音声認識に対応していません。言語を変えて試すと切り分けできます。",
+        "bad-grammar":"認識設定のエラー（bad-grammar）です。"
+      };
+      var desc=info[code]||"想定外のエラーコードです。コード名そのものが切り分け材料になります。";
+      if(code==="network"){
+        netErrStreak++;
+        if(netErrStreak<3 && shouldListen){
+          showError("<b>音声認識エラー：</b> <span class=\"mono\">network</span> — "+esc(desc)+"（"+netErrStreak+"回目・自動で再接続します）");
+          return;
+        }
+      }
+      shouldListen=false;
+      showError("<b>音声認識エラー：</b> <span class=\"mono\">"+esc(code)+"</span> — "+esc(desc)+"<ul><li>このコード名が原因の切り分け材料です。そのまま控えてください（診断ログにも残っています）。</li><li>許可できない環境では、下のキーボード入力でも翻訳＋読み上げが使えます。</li></ul>");
+      setListeningUI(false);
+    };
+    r.onend=function(){
+      logDiag("", "認識セッション終了（onend） 開始確認="+(recogStarted?"済":"未")+" / 最終エラー="+(lastErrorCode||"なし")+" / 再起動回数="+restartCount);
+      if(shouldListen){
+        if(!recogStarted){
+          endWithoutStart++;
+          if(endWithoutStart>=3){
+            shouldListen=false;
+            showError("<b>音声認識が開始直後に終了を繰り返しています。</b>開始イベント（onstart）が一度も来ていません。最終エラーコード：<span class=\"mono\">"+esc(lastErrorCode||"なし（onerror自体が発生していません）")+"</span><ul><li>エラーも出ずに即終了する場合、埋め込み表示側のポリシーで認識が塞がれている可能性があります。</li><li>ブラウザで直接開いた場合と結果が変わるか比べてください。診断ログの onstart / onerror / onend の並びが切り分け材料です。</li></ul>");
+            setListeningUI(false);
+            return;
+          }
+        }
+        restartCount++;
+        recogStarted=false;
+        restartTimer=setTimeout(function(){
+          try{ recog.lang=langByCode(srcSel.value).recog; recog.start(); logDiag("", "認識を自動再起動しました（"+restartCount+"回目）"); }
+          catch(e){
+            logDiag("e", "再起動時の start() 例外: "+errMsg(e));
+            showError("<b>音声認識の再起動に失敗しました。</b> 例外：<span class=\"mono\">"+esc(errMsg(e))+"</span>");
+            shouldListen=false; setListeningUI(false);
+          }
+        }, 350);
+      } else {
+        setListeningUI(false);
+      }
+    };
+    return r;
+  }
+  function setListeningUI(on){
+    listening=on;
+    micBtn.classList.toggle("listening", on);
+    micBtn.setAttribute("aria-label", on?"録音を停止":"録音を開始");
+    statusDot.className="dot"+(on?" on":(SR?" ready":""));
+    statusText.textContent=on?"聞き取り中":"待機中";
+    deckState.textContent=on?("聞き取り中 — "+langByCode(srcSel.value).name+"で話してください"):(SR?"タップして通訳スタート":"キーボード入力モード");
+    deckSub.textContent=on?"文が確定すると自動で翻訳して読み上げます。もう一度押すと止まります。":"一文ごとに区切って話すと、翻訳と読み上げが速くなります。";
+    if(on){ srcTag.textContent="聞き取り中"; srcTag.className="tag live"; }
+    else { srcTag.textContent="待機"; srcTag.className="tag"; stopWaveStream(); }
+  }
+  function restartRecognitionSoon(){
+    if(!recog || !shouldListen) return;
+    try{ recog.stop(); }catch(e){} /* onend will restart with the new language */
+  }
+  function startListening(){
+    showError("");
+    logDiag("", "開始ボタン: 認識を開始します（コンストラクタ="+srCtorName+"）");
+    if(hasTTS){ try{ var p=new SpeechSynthesisUtterance(""); p.volume=0; speechSynthesis.speak(p); }catch(e){} }
+    recog=createRecognition();
+    if(!recog){ logDiag("e", "開始できません: 音声認識APIがありません"); return; }
+    shouldListen=true;
+    recogStarted=false; endWithoutStart=0; netErrStreak=0; noSpeechCount=0; lastErrorCode=""; resultLogged=false; restartCount=0;
+    finalSoFar=""; interimNow=""; lastPreviewText="";
+    srcLive.innerHTML='<span class="placeholder">聞き取り中…話し始めてください。</span>';
+    clearTimeout(startWatchdog);
+    startWatchdog=setTimeout(function(){
+      if(shouldListen && !recogStarted){
+        logDiag("e", "開始タイムアウト: 3秒以内に onstart が来ませんでした（最終エラー="+(lastErrorCode||"なし")+"）");
+        showError("<b>音声認識の開始応答がありません。</b>3秒以内に開始イベント（onstart）が届きませんでした。最終エラーコード：<span class=\"mono\">"+esc(lastErrorCode||"なし")+"</span><ul><li>エラーも出ずに開始しない場合、埋め込み表示側のポリシーで塞がれている可能性があります。</li><li>診断ログの onstart / onerror / onend の並びが切り分け材料です。</li></ul>");
+      }
+    }, 3000);
+    try{
+      recog.start();
+      logDiag("", "recog.start() を呼びました（例外なし）。onstart が来るか監視します");
+    }catch(e){
+      clearTimeout(startWatchdog);
+      shouldListen=false;
+      logDiag("e", "start() 例外: "+errMsg(e));
+      showError("<b>音声認識を開始できませんでした。</b> start() の例外：<span class=\"mono\">"+esc(errMsg(e))+"</span>");
+      setListeningUI(false);
+      return;
+    }
+    setListeningUI(true);
+    startWaveStream();
+  }
+  function stopListening(){
+    shouldListen=false;
+    logDiag("", "停止ボタン: 認識を停止します");
+    clearTimeout(restartTimer);
+    clearTimeout(startWatchdog);
+    if(recog){ try{ recog.stop(); }catch(e){ logDiag("e", "stop() 例外: "+errMsg(e)); } }
+    setListeningUI(false);
+  }
+  micBtn.addEventListener("click", function(){
+    if(listening || shouldListen) stopListening(); else startListening();
+  });
+
+  refreshLangUI();
+  drawWave();
+})();
+</script>
+</body>
+</html>
