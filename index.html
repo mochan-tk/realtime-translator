@@ -93,6 +93,8 @@
   .live-text .interim{color:var(--ink3);font-weight:500}
   .live-text .placeholder{color:var(--ink3);font-weight:500;font-size:17px}
   .live-sub{margin-top:8px;font-size:12.5px;color:var(--ink3);min-height:18px}
+  .live-preview{margin-top:10px;padding:9px 11px;border:1px dashed var(--line2);border-radius:8px;background:var(--surface2);font-size:15px;line-height:1.5;color:var(--ink2);word-break:break-word}
+  .live-preview .pv-label{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--ink3);margin-bottom:2px}
 
   /* control deck */
   .deck{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
@@ -248,6 +250,7 @@
     <div class="panel target">
       <h2><span id="tgtPanelTitle">訳文</span><span class="tag" id="tgtTag">待機</span></h2>
       <div class="live-text" id="tgtLive"><span class="placeholder">翻訳結果がここに出ます。確定した文は自動で読み上げます。</span></div>
+      <div class="live-preview" id="tgtPreview" hidden></div>
       <div class="live-sub" id="tgtSub"></div>
     </div>
   </section>
@@ -345,7 +348,7 @@
   var srcSel=$("srcLang"), tgtSel=$("tgtLang"), swapBtn=$("swapBtn");
   var micBtn=$("micBtn"), deckState=$("deckState"), deckSub=$("deckSub");
   var statusDot=$("statusDot"), statusText=$("statusText");
-  var srcLive=$("srcLive"), tgtLive=$("tgtLive"), srcSub=$("srcSub"), tgtSub=$("tgtSub");
+  var srcLive=$("srcLive"), tgtLive=$("tgtLive"), srcSub=$("srcSub"), tgtSub=$("tgtSub"), tgtPreview=$("tgtPreview");
   var srcTag=$("srcTag"), tgtTag=$("tgtTag");
   var srcPanelTitle=$("srcPanelTitle"), tgtPanelTitle=$("tgtPanelTitle");
   var histList=$("histList"), histCount=$("histCount");
@@ -362,6 +365,7 @@
   var listening=false, shouldListen=false, recog=null;
   var finalSoFar="", interimNow="", entrySeq=0, spokenCount=0;
   var previewTimer=null, lastPreviewText="", translatingPreview=false;
+  var lastFinalText="", lastFinalTgtCode="";
   var audioCtx=null, analyser=null, mediaStream=null, waveRAF=null, waveLevel=0;
   var restartTimer=null;
   var recogStarted=false, startWatchdog=null, endWithoutStart=0, netErrStreak=0, noSpeechCount=0, lastErrorCode="", resultLogged=false, restartCount=0;
@@ -527,8 +531,18 @@
     var a=srcSel.value; srcSel.value=tgtSel.value; tgtSel.value=a;
     refreshLangUI();
     srcLive.innerHTML='<span class="placeholder">'+esc(langByCode(srcSel.value).name)+'で話してください。</span>';
-    tgtLive.innerHTML='<span class="placeholder">'+esc(langByCode(tgtSel.value).name)+'に翻訳します。</span>';
-    srcTag.textContent="待機"; tgtTag.textContent="待機"; srcTag.className="tag"; tgtTag.className="tag";
+    clearTimeout(previewTimer); hideTargetPreview();
+    if(lastFinalText){
+      /* 言語を入れ替えても前回の確定訳文は消さない。次の訳文が表示される直前まで残す。 */
+      tgtLive.textContent=lastFinalText;
+      tgtTag.textContent="前回の訳文"; tgtTag.className="tag";
+      tgtSub.textContent="言語を入れ替えました。次に話すと、新しい訳文が表示されるタイミングで置き換わります。";
+      srcTag.textContent="待機"; srcTag.className="tag";
+    } else {
+      tgtLive.innerHTML='<span class="placeholder">'+esc(langByCode(tgtSel.value).name)+'に翻訳します。</span>';
+      srcTag.textContent="待機"; tgtTag.textContent="待機"; srcTag.className="tag"; tgtTag.className="tag";
+      tgtSub.textContent="";
+    }
     finalSoFar=""; interimNow=""; lastPreviewText="";
   }
   swapBtn.addEventListener("click", swapLangs);
@@ -552,7 +566,7 @@
   }
   bindToggle("tglSpeak", true, function(on){ autoSpeak=on; if(!on) stopSpeak(); });
   bindToggle("tglConvo", false, function(on){ convoMode=on; toast(on?"双方向モード ON：一文ごとに言語が入れ替わります":"双方向モード OFF"); });
-  bindToggle("tglPreview", true, function(on){ previewOn=on; if(!on){ clearTimeout(previewTimer); tgtTag.textContent="待機"; tgtTag.className="tag"; } });
+  bindToggle("tglPreview", true, function(on){ previewOn=on; if(!on){ clearTimeout(previewTimer); hideTargetPreview(); if(!lastFinalText){ tgtTag.textContent="待機"; tgtTag.className="tag"; } else { tgtTag.textContent="確定"; tgtTag.className="tag"; } } });
 
   /* ---------- live panels ---------- */
   function renderSource(){
@@ -563,11 +577,24 @@
     }
     srcLive.scrollTop=srcLive.scrollHeight;
   }
+  function hideTargetPreview(){
+    tgtPreview.hidden=true; tgtPreview.textContent="";
+  }
   function setTargetPreview(text){
+    if(lastFinalText){
+      /* 前回の確定訳文はメイン表示に残したまま、プレビューは別枠に出す。
+         次の確定訳文が届く直前まで、前回の訳文を大きな文字で確認できるようにする。 */
+      tgtPreview.innerHTML='<span class="pv-label">次の文のプレビュー（確定するまで上の訳文が残ります）</span>'+esc(text);
+      tgtPreview.hidden=false;
+      tgtTag.textContent="確定"; tgtTag.className="tag";
+      return;
+    }
     tgtLive.textContent=text;
     tgtTag.textContent="プレビュー"; tgtTag.className="tag live";
   }
-  function setTargetFinal(text){
+  function setTargetFinal(text, tgtCode){
+    lastFinalText=text; lastFinalTgtCode=tgtCode||tgtSel.value;
+    hideTargetPreview();
     tgtLive.textContent=text;
     tgtTag.textContent="確定"; tgtTag.className="tag";
   }
@@ -606,12 +633,22 @@
     entry.querySelector(".replay").addEventListener("click", function(){ if(data.tran) speak(data.tran, data.tgt); else toast("まだ翻訳が終わっていません"); });
     entry.querySelector(".copyt").addEventListener("click", function(){ copyText(data.tran||""); });
     entry.querySelector(".copyo").addEventListener("click", function(){ copyText(data.orig); });
+    /* 翻訳が走っている間も、前回の確定訳文をメイン表示に残す。
+       置き換えるのは新しい訳文が実際に表示できるようになったこの瞬間だけ。 */
+    hideTargetPreview();
+    if(lastFinalText){
+      tgtTag.textContent="前回・翻訳中"; tgtTag.className="tag live";
+      tgtSub.textContent="次の文を翻訳中… 前回の訳文を表示しています。";
+    } else {
+      tgtTag.textContent="翻訳中"; tgtTag.className="tag live";
+      tgtSub.textContent="翻訳中…";
+    }
     var t0=performance.now();
     translateText(origText, srcCode, tgtCode).then(function(out){
       data.tran=out;
       tranEl.textContent=out; tranEl.className="tran";
       entry.querySelector(".lat").textContent=Math.round(performance.now()-t0)+" ms";
-      setTargetFinal(out);
+      setTargetFinal(out, tgtCode);
       tgtSub.textContent=langByCode(tgtCode).name+" ・ 読み上げ"+(autoSpeak?"します":"はOFFです");
       if(autoSpeak) speak(out, tgtCode);
       spokenCount++;
@@ -621,7 +658,15 @@
     }).catch(function(err){
       tranEl.textContent="翻訳に失敗しました（詳細: "+(err&&err.message?err.message:"不明")+"）。通信を確認してもう一度お試しください。";
       tranEl.className="tran failed";
-      tgtLive.innerHTML='<span class="placeholder">翻訳に失敗しました。もう一度話すか、キーボード入力をお試しください。失敗の詳細は会話ログと診断ログに出ています。</span>';
+      if(lastFinalText){
+        /* 失敗しても前回の確定訳文は消さない */
+        tgtLive.textContent=lastFinalText;
+        tgtTag.textContent="前回の訳文"; tgtTag.className="tag";
+        tgtSub.textContent="翻訳に失敗しました。前回の訳文を表示しています。詳細は会話ログと診断ログに出ています。";
+      } else {
+        tgtLive.innerHTML='<span class="placeholder">翻訳に失敗しました。もう一度話すか、キーボード入力をお試しください。失敗の詳細は会話ログと診断ログに出ています。</span>';
+        tgtTag.textContent="待機"; tgtTag.className="tag"; tgtSub.textContent="";
+      }
     });
     return entry;
   }
@@ -816,6 +861,11 @@
     shouldListen=true;
     recogStarted=false; endWithoutStart=0; netErrStreak=0; noSpeechCount=0; lastErrorCode=""; resultLogged=false; restartCount=0;
     finalSoFar=""; interimNow=""; lastPreviewText="";
+    hideTargetPreview();
+    if(lastFinalText){
+      tgtTag.textContent="前回の訳文"; tgtTag.className="tag";
+      tgtSub.textContent="聞き取り中… 次の訳文が表示されるまで、前回の訳文が残ります。";
+    }
     srcLive.innerHTML='<span class="placeholder">聞き取り中…話し始めてください。</span>';
     clearTimeout(startWatchdog);
     startWatchdog=setTimeout(function(){
